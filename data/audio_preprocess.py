@@ -35,6 +35,8 @@ def write_audio(audio, wav_path_str, sample_rate):
 
 
 def split_audio(audio, chunk_length: int = 8):
+    if len(audio) == Config.sample_rate * chunk_length:
+        return [audio]
     return [audio[i:i + Config.sample_rate * chunk_length] for i in
             range(0, len(audio) - Config.sample_rate * chunk_length, Config.sample_rate * chunk_length)]
 
@@ -61,14 +63,18 @@ def split_all_wav_from_path(path: str, out_path: str):
                         write_all_audio(audios, f'{out_dir}/{wav.name}')
                         Path(f'{out_dir}/archive.txt').open('a').write(f'{wav.name}\n')
                         wav.unlink()
-                except:
-                    print(str(wav))
+                except Exception as e:
+                    print(wav, e)
 
 
 def remove_short(path: str):
     for audio in tqdm(Path(path).rglob('*.wav')):
-        if len(load_audio(str(audio))) < 8 * Config.sample_rate:
+        try:
+            if len(load_audio(str(audio))) < 8 * Config.sample_rate:
+                audio.unlink()
+        except Exception as e:
             audio.unlink()
+            print(e)
 
 
 class Aud2Mel(torch.nn.Module):
@@ -92,19 +98,18 @@ class Aud2Mel(torch.nn.Module):
         pows_tensor = torch.stft(auds_tensor, n_fft=self.n_fft, win_length=self.win_len,
                                  hop_length=self.hop_len, window=self.window).pow(2.0).sum(-1)
         mels_tensor = self.mel_basis.expand(bs, -1, -1).bmm(pows_tensor).transpose(1, 2)
-        logs_tensor = mels_tensor.clamp(min=1e-10).log10()  # it comes from EspNet
-        return logs_tensor
+        return mels_tensor.clamp(min=1e-10).log10()
 
 
 if __name__ == '__main__':
-    path = "/home/turib/val_data"
-    # processes = []
-    # for directory in Path(path).glob("*/"):
-    #     if directory.name in ['es', 'en', 'hu', 'tr', 'fr', 'de']:
-    #         p = Process(target=split_all_wav_from_path,
-    #                     args=(f"/home/turib/train_data/{directory.name}_long", f"/home/turib/train_data/{directory.name}"))
-    #         p.start()
-    #         processes.append(p)
-    # for p in processes:
-    #     p.join()
+    path = "/home/turib/train_data"
+    processes = []
+    for directory in Path(path).glob("*/"):
+        if directory.name in ['es', 'en', 'hu', 'tr', 'fr', 'de']:
+            p = Process(target=split_all_wav_from_path,
+                        args=(f"/home/turib/train_data/{directory.name}_long", f"/home/turib/train_data/{directory.name}"))
+            p.start()
+            processes.append(p)
+    for p in processes:
+        p.join()
     remove_short(path)
